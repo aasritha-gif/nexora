@@ -55,9 +55,18 @@ export default function ResourceDetailPage({
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
 
-    // Check if current user bookmarked this
+    // Check if current user bookmarked this (API + LocalStorage fallback)
+    try {
+      const local = JSON.parse(localStorage.getItem("nexora_local_bookmarks") || "[]");
+      if (local.some((b: any) => b.resource_id === resourceId)) {
+        setIsBookmarked(true);
+      }
+    } catch {}
+
     apiClient<{ bookmarked: boolean }>(`/engagement/me/bookmarks/status/${resourceId}`)
-      .then((res) => setIsBookmarked(!!res.bookmarked))
+      .then((res) => {
+        if (res.bookmarked) setIsBookmarked(true);
+      })
       .catch(() => {});
   }, [resourceId]);
 
@@ -138,21 +147,51 @@ export default function ResourceDetailPage({
 
   const handleToggleBookmark = async () => {
     setBookmarkLoading(true);
+    const nextState = !isBookmarked;
+    setIsBookmarked(nextState);
+
+    // Save/Remove from LocalStorage so it works instantly regardless of auth
     try {
-      if (isBookmarked) {
+      const local = JSON.parse(localStorage.getItem("nexora_local_bookmarks") || "[]");
+      if (nextState) {
+        if (!local.some((b: any) => b.resource_id === resourceId) && resource) {
+          local.unshift({
+            resource_id: resource.resource_id,
+            title: resource.title,
+            type: resource.type,
+            authors: resource.authors,
+            taxonomy: resource.taxonomy,
+            access: resource.access,
+            rating_average: resource.rating_average,
+            view_count: resource.view_count,
+            year: resource.year,
+            publisher: resource.publisher,
+            is_seed_data: resource.is_seed_data,
+          });
+          localStorage.setItem("nexora_local_bookmarks", JSON.stringify(local));
+        }
+      } else {
+        const filtered = local.filter((b: any) => b.resource_id !== resourceId);
+        localStorage.setItem("nexora_local_bookmarks", JSON.stringify(filtered));
+      }
+    } catch (e) {
+      console.warn("Could not save to local bookmarks", e);
+    }
+
+    // Try backend sync if token is available
+    try {
+      if (!nextState) {
         await apiClient(`/engagement/me/bookmarks/${resourceId}`, {
           method: "DELETE",
         });
-        setIsBookmarked(false);
       } else {
         await apiClient(`/engagement/me/bookmarks`, {
           method: "POST",
           body: JSON.stringify({ resource_id: resourceId }),
         });
-        setIsBookmarked(true);
       }
     } catch (err) {
-      console.error("Bookmark toggle failed:", err);
+      // Ignored for unauthenticated or network failure
     } finally {
       setBookmarkLoading(false);
     }

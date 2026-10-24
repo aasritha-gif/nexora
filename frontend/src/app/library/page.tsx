@@ -19,12 +19,7 @@ export default function LibraryPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!authLoading && !user) {
-      router.push("/login");
-      return;
-    }
-
-    if (user) {
+    if (!authLoading) {
       loadLibraryData();
     }
   }, [user, authLoading]);
@@ -32,24 +27,33 @@ export default function LibraryPage() {
   const loadLibraryData = async () => {
     setLoading(true);
     try {
+      let localBookmarks: ResourceSummary[] = [];
+      try {
+        localBookmarks = JSON.parse(localStorage.getItem("nexora_local_bookmarks") || "[]");
+      } catch {}
+
       const [bmData, histData, recData] = await Promise.all([
-        apiClient<any>("/engagement/me/bookmarks")
-          .then((res) => res.items || res || [])
-          .catch(() => []),
-        apiClient<any>("/engagement/me/history")
-          .then((res) => {
-            const list = res.items || res || [];
-            return list.map((item: any) => item.resource || item);
-          })
-          .catch(() => []),
+        user
+          ? apiClient<any>("/engagement/me/bookmarks")
+              .then((res) => res.items || res || [])
+              .catch(() => [])
+          : Promise.resolve([]),
+        user
+          ? apiClient<any>("/engagement/me/history")
+              .then((res) => {
+                const list = res.items || res || [];
+                return list.map((item: any) => item.resource || item);
+              })
+              .catch(() => [])
+          : Promise.resolve([]),
         apiClient<any>("/engagement/recommendations")
           .then((res) => res.items || res || [])
           .catch(async () => {
-            // Fallback to top rated/popular resources
             const searchRes = await apiClient<any>("/resources?limit=6").catch(() => ({ items: [] }));
             return searchRes.items || [];
           }),
       ]);
+
       const safeArray = (data: any): ResourceSummary[] => {
         if (Array.isArray(data)) return data;
         if (data && Array.isArray(data.items)) return data.items;
@@ -57,7 +61,16 @@ export default function LibraryPage() {
         return [];
       };
 
-      setBookmarks(safeArray(bmData));
+      const serverBookmarks = safeArray(bmData);
+      // Merge server + local bookmarks without duplicates
+      const mergedBookmarks = [...localBookmarks];
+      for (const s of serverBookmarks) {
+        if (!mergedBookmarks.some((b) => b.resource_id === s.resource_id)) {
+          mergedBookmarks.push(s);
+        }
+      }
+
+      setBookmarks(mergedBookmarks);
       setHistory(safeArray(histData));
       setRecommendations(safeArray(recData));
     } finally {
