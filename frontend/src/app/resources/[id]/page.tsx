@@ -54,6 +54,11 @@ export default function ResourceDetailPage({
       .then((data) => setResource(data))
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
+
+    // Check if current user bookmarked this
+    apiClient<{ bookmarked: boolean }>(`/engagement/me/bookmarks/status/${resourceId}`)
+      .then((res) => setIsBookmarked(!!res.bookmarked))
+      .catch(() => {});
   }, [resourceId]);
 
   const loadAiOverview = async () => {
@@ -134,13 +139,20 @@ export default function ResourceDetailPage({
   const handleToggleBookmark = async () => {
     setBookmarkLoading(true);
     try {
-      await apiClient(`/engagement/bookmarks/${resourceId}`, {
-        method: isBookmarked ? "DELETE" : "POST",
-      });
-      setIsBookmarked(!isBookmarked);
-    } catch {
-      // fallback toggle for UI feedback
-      setIsBookmarked(!isBookmarked);
+      if (isBookmarked) {
+        await apiClient(`/engagement/me/bookmarks/${resourceId}`, {
+          method: "DELETE",
+        });
+        setIsBookmarked(false);
+      } else {
+        await apiClient(`/engagement/me/bookmarks`, {
+          method: "POST",
+          body: JSON.stringify({ resource_id: resourceId }),
+        });
+        setIsBookmarked(true);
+      }
+    } catch (err) {
+      console.error("Bookmark toggle failed:", err);
     } finally {
       setBookmarkLoading(false);
     }

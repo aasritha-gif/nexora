@@ -33,13 +33,22 @@ export default function LibraryPage() {
     setLoading(true);
     try {
       const [bmData, histData, recData] = await Promise.all([
-        apiClient<ResourceSummary[]>("/engagement/bookmarks").catch(() => []),
-        apiClient<ResourceSummary[]>("/engagement/history").catch(() => []),
-        apiClient<any>("/recommendations").then((res) => res.items || res || []).catch(async () => {
-          // Fallback to top rated/popular resources
-          const searchRes = await apiClient<any>("/resources?limit=6").catch(() => ({ items: [] }));
-          return searchRes.items || [];
-        }),
+        apiClient<any>("/engagement/me/bookmarks")
+          .then((res) => res.items || res || [])
+          .catch(() => []),
+        apiClient<any>("/engagement/me/history")
+          .then((res) => {
+            const list = res.items || res || [];
+            return list.map((item: any) => item.resource || item);
+          })
+          .catch(() => []),
+        apiClient<any>("/engagement/recommendations")
+          .then((res) => res.items || res || [])
+          .catch(async () => {
+            // Fallback to top rated/popular resources
+            const searchRes = await apiClient<any>("/resources?limit=6").catch(() => ({ items: [] }));
+            return searchRes.items || [];
+          }),
       ]);
       const safeArray = (data: any): ResourceSummary[] => {
         if (Array.isArray(data)) return data;
