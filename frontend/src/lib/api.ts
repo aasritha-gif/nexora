@@ -20,6 +20,7 @@ export async function apiClient<T>(endpoint: string, options: RequestOptions = {
 
   const reqHeaders: Record<string, string> = {
     "Content-Type": "application/json",
+    "ngrok-skip-browser-warning": "true",
     ...(headers as Record<string, string>),
   };
 
