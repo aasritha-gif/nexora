@@ -42,6 +42,10 @@ export async function apiClient<T>(endpoint: string, options: RequestOptions = {
   });
 
   if (!res.ok) {
+    if (res.status === 401 && typeof window !== "undefined") {
+      localStorage.removeItem("nexora_access_token");
+      localStorage.removeItem("nexora_user");
+    }
     let errorMsg = `API request failed: ${res.status} ${res.statusText}`;
     try {
       const errorJson = await res.json();
