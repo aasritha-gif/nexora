@@ -1,0 +1,161 @@
+name: nexora
+
+services:
+  # ── Databases ────────────────────────────────────────────────
+  mongodb:
+    image: mongo:8.0
+    container_name: nexora-mongodb
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_USER:-nexora}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD:-nexora_dev_password}
+      MONGO_INITDB_DATABASE: nexora
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  redis:
+    image: redis:7.4-alpine
+    container_name: nexora-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD:-nexora_dev_password}"]
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-nexora_dev_password}
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" ping | grep PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  neo4j:
+    image: neo4j:5.26-community
+    container_name: nexora-neo4j
+    restart: unless-stopped
+    ports:
+      - "7474:7474"   # HTTP browser
+      - "7687:7687"   # Bolt
+    environment:
+      NEO4J_AUTH: neo4j/${NEO4J_PASSWORD:-nexora_dev_password}
+      NEO4J_server_memory_heap_max__size: 1G
+      NEO4J_server_memory_pagecache__size: 512M
+      NEO4J_server_config_strict__validation_enabled: "false"
+    volumes:
+      - neo4j_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "cypher-shell -u neo4j -p \"$$NEO4J_PASSWORD\" 'RETURN 1 AS ok' | grep 'ok'"]
+      interval: 15s
+      timeout: 10s
+      retries: 12
+      start_period: 40s
+
+  monetdb:
+    image: monetdb/monetdb:latest
+    container_name: nexora-monetdb
+    restart: unless-stopped
+    ports:
+      - "50000:50000"
+    environment:
+      MDB_DB_ADMIN_PASS: ${MONETDB_PASSWORD:-nexora_dev_password}
+      MDB_CREATE_DBS: ${MONETDB_DATABASE:-nexora}
+    volumes:
+      - monetdb_data:/var/monetdb5/dbfarm
+    healthcheck:
+      test: ["CMD-SHELL", "mclient -d ${MONETDB_DATABASE:-nexora} -u monetdb -P \"$$MDB_DB_ADMIN_PASS\" -s 'SELECT 1;' >/dev/null 2>&1"]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 60s
+
+  # ── Application ──────────────────────────────────────────────
+  backend:
+    build:
+      context: .
+      dockerfile: docker/backend.Dockerfile
+    container_name: nexora-backend
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      # Container-internal overrides: services resolve by hostname, not localhost
+      NEXORA_MONGO_URL: mongodb://${MONGO_USER:-nexora}:${MONGO_PASSWORD:-nexora_dev_password}@mongodb:27017/?authSource=admin
+      NEXORA_REDIS_URL: redis://:${REDIS_PASSWORD:-nexora_dev_password}@redis:6379/0
+      NEXORA_NEO4J_URI: bolt://neo4j:7687
+      NEXORA_NEO4J_USER: neo4j
+      NEXORA_NEO4J_PASSWORD: ${NEO4J_PASSWORD:-nexora_dev_password}
+      NEXORA_MONETDB_HOST: monetdb
+      NEXORA_MONETDB_PORT: 50000
+      NEXORA_MONETDB_USER: monetdb
+      NEXORA_MONETDB_PASSWORD: ${MONETDB_PASSWORD:-nexora_dev_password}
+      NEXORA_MONETDB_DATABASE: ${MONETDB_DATABASE:-nexora}
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      neo4j:
+        condition: service_started
+      monetdb:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health/liveness', timeout=5)\""]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 20s
+
+  sync-worker:
+    build:
+      context: .
+      dockerfile: docker/backend.Dockerfile
+    container_name: nexora-sync-worker
+    restart: unless-stopped
+    command: ["python", "-m", "workers.sync_scheduler"]
+    env_file:
+      - .env
+    environment:
+      NEXORA_MONGO_URL: mongodb://${MONGO_USER:-nexora}:${MONGO_PASSWORD:-nexora_dev_password}@mongodb:27017/?authSource=admin
+      NEXORA_REDIS_URL: redis://:${REDIS_PASSWORD:-nexora_dev_password}@redis:6379/0
+      NEXORA_NEO4J_URI: bolt://neo4j:7687
+      NEXORA_NEO4J_USER: neo4j
+      NEXORA_NEO4J_PASSWORD: ${NEO4J_PASSWORD:-nexora_dev_password}
+      NEXORA_MONETDB_HOST: monetdb
+      NEXORA_MONETDB_PORT: 50000
+      NEXORA_MONETDB_USER: monetdb
+      NEXORA_MONETDB_PASSWORD: ${MONETDB_PASSWORD:-nexora_dev_password}
+      NEXORA_MONETDB_DATABASE: ${MONETDB_DATABASE:-nexora}
+    depends_on:
+      backend:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: .
+      dockerfile: docker/frontend.Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+    container_name: nexora-frontend
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    depends_on:
+      backend:
+        condition: service_healthy
+
+volumes:
+  mongo_data:
+  redis_data:
+  neo4j_data:
+  monetdb_data:
