@@ -1,10 +1,12 @@
 const getBaseUrl = () => {
+  const envUrl = process.env.NEXT_PUBLIC_API_URL;
+  if (envUrl) {
+    return envUrl.endsWith("/api") ? envUrl : `${envUrl.replace(/\/$/, "")}/api`;
+  }
   if (typeof window !== "undefined") {
-    // In browser: use relative path so it routes through whatever domain/tunnel is being visited
     return "/api";
   }
-  const raw = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-  return raw.endsWith("/api") ? raw : `${raw.replace(/\/$/, "")}/api`;
+  return "http://localhost:8000/api";
 };
 
 const API_BASE = getBaseUrl();
