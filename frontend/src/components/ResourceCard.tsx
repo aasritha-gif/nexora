@@ -36,7 +36,7 @@ export default function ResourceCard({ resource }: ResourceCardProps) {
             {/* Type & Access pills */}
             <div className="flex flex-wrap items-center gap-1.5 mb-2">
               <span className="text-[10px] font-medium tracking-wide uppercase px-2 py-0.5 rounded bg-indigo-brand/15 text-indigo-accent border border-indigo-brand/20">
-                {resource.type.replace("_", " ")}
+                {(resource.type || "resource").replace("_", " ")}
               </span>
               <span
                 className={`text-[10px] font-semibold tracking-wide uppercase px-2 py-0.5 rounded ${

@@ -41,9 +41,16 @@ export default function LibraryPage() {
           return searchRes.items || [];
         }),
       ]);
-      setBookmarks(bmData || []);
-      setHistory(histData || []);
-      setRecommendations(recData || []);
+      const safeArray = (data: any): ResourceSummary[] => {
+        if (Array.isArray(data)) return data;
+        if (data && Array.isArray(data.items)) return data.items;
+        if (data && Array.isArray(data.resources)) return data.resources;
+        return [];
+      };
+
+      setBookmarks(safeArray(bmData));
+      setHistory(safeArray(histData));
+      setRecommendations(safeArray(recData));
     } finally {
       setLoading(false);
     }
